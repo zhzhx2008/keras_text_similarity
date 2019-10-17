@@ -3,21 +3,26 @@
 # @Author  : zhzhx2008
 # @Date    : 2019/10/12
 
+# from:
+# https://arxiv.org/abs/1609.06038
+#
+# reference:
+# https://www.kaggle.com/lamdang/dl-models
+# https://github.com/dzdrav/kerasESIM/blob/master/tfRNN.py
+
 
 from keras import Input, Model
 from keras.activations import softmax
-from keras.layers import Embedding, Bidirectional, LSTM, Dot, Lambda, Permute, Concatenate, Multiply, GlobalAvgPool1D, GlobalMaxPool1D, Dense, Subtract
+from keras.layers import *
 from keras.optimizers import Adam
 
-maxlen = 30
+maxlen = 128
 voc_size = 6000
 embedding_dim = 300
-drop_out = 0.2
-lstm_dim = 128
-dense_dim = 100
+drop_out = 0.5
+lstm_dim = 300
+dense_dim = 300
 
-# from: https://arxiv.org/abs/1609.06038
-# reference: https://www.kaggle.com/lamdang/dl-models
 q1_input = Input(name='q1', shape=(maxlen,))
 q2_input = Input(name='q2', shape=(maxlen,))
 
@@ -28,6 +33,8 @@ q1_embed = embedding(q1_input)
 q2_embed = embedding(q2_input)
 q1_encoded = encode(q1_embed)
 q2_encoded = encode(q2_embed)
+q1_encoded = Dropout(drop_out)(q1_encoded)
+q2_encoded = Dropout(drop_out)(q2_encoded)
 
 # 2. Local Inference Modeling
 e = Dot(axes=-1)([q1_encoded, q2_encoded])
@@ -52,6 +59,8 @@ q2_combined = Concatenate()([
 compose = Bidirectional(LSTM(lstm_dim, return_sequences=True))
 q1_compare = compose(q1_combined)
 q2_compare = compose(q2_combined)
+q1_compare = Dropout(drop_out)(q1_compare)
+q2_compare = Dropout(drop_out)(q2_compare)
 
 # 4. Prediction
 merged = Concatenate()([
@@ -61,6 +70,7 @@ merged = Concatenate()([
     GlobalMaxPool1D()(q2_compare)
 ])
 dense = Dense(dense_dim, activation='tanh')(merged)
+dense = Dropout(drop_out)(dense)
 out = Dense(1, activation='sigmoid')(dense)
 
 model = Model(inputs=[q1_input, q2_input], outputs=out)

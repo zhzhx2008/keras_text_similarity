@@ -1,23 +1,26 @@
 # coding=utf-8
 
-# @Author  : zhaoxi9
+# @Author  : zhzhx2008
 # @Date    : 2019/10/12
+
+# from:
+# https://arxiv.org/abs/1606.01933
+#
+# reference:
+# https://github.com/explosion/spaCy/blob/master/examples/keras_parikh_entailment/keras_decomposable_attention.py
 
 
 from keras import Input, Model, Sequential
 from keras import backend as K
 from keras.activations import softmax
-from keras.layers import Embedding, Dot, Lambda, Permute, Dense, Dropout, dot, concatenate
+from keras.layers import Embedding, Dot, Lambda, Permute, Dense, Dropout, dot, concatenate, TimeDistributed
 
 maxlen = 30
 voc_size = 6000
 embedding_dim = 300
 drop_out = 0.2
-lstm_dim = 128
-dense_dim = 100
+dense_dim = 200
 
-# from: https://arxiv.org/abs/1606.01933
-# reference: https://github.com/explosion/spaCy/blob/master/examples/keras_parikh_entailment/keras_decomposable_attention.py
 q1 = Input(name='q1', shape=(maxlen,))
 q2 = Input(name='q2', shape=(maxlen,))
 
@@ -50,8 +53,8 @@ G = Sequential(
     )
 comp1 = concatenate([q1_embed, q1_aligned])
 comp2 = concatenate([q2_embed, q2_aligned])
-v1 = G(comp1)
-v2 = G(comp2)
+v1 = TimeDistributed(G)(comp1)
+v2 = TimeDistributed(G)(comp2)
 # step 3: aggregate
 v1_sum = Lambda(lambda x : K.sum(x, axis=1))(v1)
 v2_sum = Lambda(lambda x : K.sum(x, axis=1))(v2)
@@ -68,5 +71,5 @@ out = H(v_sum)
 out = Dense(1, activation="sigmoid")(out)
 
 model = Model(inputs=[q1, q2], outputs=out)
-model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['binary_crossentropy', 'accuracy'])
+model.compile(optimizer='adagrad', loss='binary_crossentropy', metrics=['binary_crossentropy', 'accuracy'])
 print(model.summary())
