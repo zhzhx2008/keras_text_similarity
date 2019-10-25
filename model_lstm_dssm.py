@@ -1,26 +1,82 @@
 # coding=utf-8
 
 # @Author  : zhzhx2008
-# @Date    : 2019/10/12
+# @Date    : 2019/10/22
 
 # from:
-# https://arxiv.org/abs/1609.06038
+# https://arxiv.org/abs/1412.6629
 #
-# reference:
-# https://www.kaggle.com/lamdang/dl-models
-# https://github.com/dzdrav/kerasESIM/blob/master/tfRNN.py
+
+
+# from keras import Model
+# from keras import backend as K
+# from keras.layers import *
+# from keras.optimizers import Adam
+#
+# maxlen = 128
+# voc_char_size = 6000
+#
+# # tri-gram
+# q1_input = Input(name='q1', shape=(maxlen-2, voc_char_size * 3, ))
+# q2_input = Input(name='q2', shape=(maxlen-2, voc_char_size * 3, ))
+#
+# lstm = LSTM(300, activation='tanh')
+# dense = Dense(128, activation='tanh')
+#
+# q1 = lstm(q1_input)
+# q1 = dense(q1)
+#
+# q2 = lstm(q2_input)
+# q2 = dense(q2)
+#
+# molecular = Lambda(lambda x: K.abs(K.sum(x[0] * x[1], axis=-1)))([q1, q2])
+# denominator = Lambda(lambda x: K.sqrt(K.sum(K.square(x[0]), axis=-1)) * K.sqrt(K.sum(K.square(x[1]), axis=-1)))(
+#     [q1, q2])
+# out = Lambda(lambda x: x[0] / x[1])([molecular, denominator])
+#
+# model = Model(inputs=[q1_input, q2_input], outputs=out)
+# model.compile(optimizer=Adam(lr=1e-3), loss='categorical_crossentropy',
+#               metrics=['categorical_crossentropy', 'accuracy'])
+# print(model.summary())
+
+
+
+
+
+
+
+
+
+# coding=utf-8
+
+# @Author  : zhzhx2008
+# @Date    : 2019/10/22
+
+# from:
+# http://www.iro.umontreal.ca/~lisa/pointeurs/ir0895-he-2.pdf
+#
+# reference：
+# https://www.cnblogs.com/guoyaohua/p/9229190.html
+#
+
+
+from keras import Model
+from keras import backend as K
+from keras.callbacks import EarlyStopping, ModelCheckpoint
+from keras.layers import *
+from keras.optimizers import Adam
+
+
 
 
 import warnings
 
 import jieba
 import numpy as np
-from keras import Model
-from keras.activations import softmax
-from keras.callbacks import EarlyStopping, ModelCheckpoint
-from keras.layers import *
 from keras.preprocessing import sequence
 from keras.preprocessing.text import Tokenizer
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.model_selection import train_test_split
 
 warnings.filterwarnings("ignore")
@@ -48,6 +104,21 @@ def get_datas(input_file):
             label = int(split[3].strip())
             datas.append((q1_word, q2_word, q1_char, q2_char, label))
     return datas
+
+
+def idx_processed(ary, voc_size, ngram):
+    ary3 = np.eye(voc_size + 1)[ary]
+    nums = ary3.shape[0]
+    maxlen = ary3.shape[1]
+    dim = ary3.shape[2]
+    res = np.zeros((nums, maxlen + 1 - ngram, dim * ngram))
+    for i in range(nums):
+        for j in range(0, maxlen - ngram + 1):
+            t = []
+            for k in range(0, ngram):
+                t.extend(list(ary3[i,j+k,:]))
+            res[i, j, :] = t
+    return res
 
 
 input_file = './data/atec_nlp_sim_train.csv'
@@ -81,6 +152,7 @@ label_test = [x[4] for x in datas_test]
 tokenizer = Tokenizer()
 tokenizer.fit_on_texts(q1_word_train + q2_word_train)
 
+# feature2: binary
 # feature5: word index for deep learning
 q1_train_word_index = tokenizer.texts_to_sequences(q1_word_train)
 q1_dev_word_index = tokenizer.texts_to_sequences(q1_word_dev)
@@ -97,82 +169,54 @@ q2_train_word_index = sequence.pad_sequences(q2_train_word_index, maxlen=max_wor
 q2_dev_word_index = sequence.pad_sequences(q2_dev_word_index, maxlen=max_word_length)
 q2_test_word_index = sequence.pad_sequences(q2_test_word_index, maxlen=max_word_length)
 
-maxlen = max_word_length
-voc_size = len(tokenizer.word_index)
-embedding_dim = 300
-drop_out = 0.5
-lstm_dim = 300
-dense_dim = 300
+voc_char_size = len(tokenizer.word_index)
+ngram = 3
 
-q1_input = Input(name='q1', shape=(maxlen,))
-q2_input = Input(name='q2', shape=(maxlen,))
+q1_train_word_matrix = idx_processed(q1_train_word_index, voc_char_size, ngram)
+q1_dev_word_matrix = idx_processed(q1_dev_word_index, voc_char_size, ngram)
+q1_test_word_matrix = idx_processed(q1_test_word_index, voc_char_size, ngram)
+q2_train_word_matrix = idx_processed(q2_train_word_index, voc_char_size, ngram)
+q2_dev_word_matrix = idx_processed(q2_dev_word_index, voc_char_size, ngram)
+q2_test_word_matrix = idx_processed(q2_test_word_index, voc_char_size, ngram)
 
-# 1. Input Encoding
-embedding = Embedding(voc_size + 1, embedding_dim)
-encode = Bidirectional(LSTM(lstm_dim, return_sequences=True))
-q1_embed = embedding(q1_input)
-q2_embed = embedding(q2_input)
-q1_encoded = encode(q1_embed)
-q2_encoded = encode(q2_embed)
-q1_encoded = Dropout(drop_out)(q1_encoded)
-q2_encoded = Dropout(drop_out)(q2_encoded)
+# tri-gram
+q1_input = Input(name='q1', shape=(max_word_length - ngram + 1, (voc_char_size+1)*ngram, ))
+q2_input = Input(name='q2', shape=(max_word_length - ngram + 1, (voc_char_size+1)*ngram, ))
 
-# 2. Local Inference Modeling
-e = Dot(axes=-1)([q1_encoded, q2_encoded])
-e_1 = Lambda(lambda x: softmax(x, axis=1))(e)
-e_2 = Permute((2, 1))(Lambda(lambda x: softmax(x, axis=2))(e))
-q2_aligned = Dot(axes=1)([e_1, q1_encoded])
-q1_aligned = Dot(axes=1)([e_2, q2_encoded])
-q1_combined = Concatenate()([
-    q1_encoded,
-    q1_aligned,
-    Subtract()([q1_encoded, q1_aligned]),
-    Multiply()([q1_encoded, q1_aligned])
-])
-q2_combined = Concatenate()([
-    q2_encoded,
-    q2_aligned,
-    Subtract()([q2_encoded, q2_aligned]),
-    Multiply()([q2_encoded, q2_aligned])
-])
+lstm = LSTM(300, activation='tanh')
+dense = Dense(128, activation='tanh')
 
-# 3. Inference Composition
-compose = Bidirectional(LSTM(lstm_dim, return_sequences=True))
-q1_compare = compose(q1_combined)
-q2_compare = compose(q2_combined)
-q1_compare = Dropout(drop_out)(q1_compare)
-q2_compare = Dropout(drop_out)(q2_compare)
+q1 = lstm(q1_input)
+q1 = dense(q1)
 
-# 4. Prediction
-merged = Concatenate()([
-    GlobalAvgPool1D()(q1_compare),
-    GlobalMaxPool1D()(q1_compare),
-    GlobalAvgPool1D()(q2_compare),
-    GlobalMaxPool1D()(q2_compare)
-])
-dense = Dense(dense_dim, activation='tanh')(merged)
-dense = Dropout(drop_out)(dense)
-out = Dense(1, activation='sigmoid')(dense)
+q2 = lstm(q2_input)
+q2 = dense(q2)
+
+molecular = Lambda(lambda x: K.abs(K.sum(x[0] * x[1], axis=-1, keepdims=True)))([q1, q2])
+denominator = Lambda(lambda x: K.sqrt(K.sum(K.square(x[0]), axis=-1, keepdims=True)) * K.sqrt(K.sum(K.square(x[1]), axis=-1, keepdims=True)))(
+    [q1, q2])
+out = Lambda(lambda x: x[0] / x[1])([molecular, denominator])
 
 model = Model(inputs=[q1_input, q2_input], outputs=out)
 model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 print(model.summary())
 
-model_weight_file = './model_esim.h5'
-model_file = './model_esim.model'
+
+model_weight_file = './model_lstm_dssm.h5'
+model_file = './model_lstm_dssm.model'
 early_stopping = EarlyStopping(monitor='val_loss', patience=5)
 model_checkpoint = ModelCheckpoint(model_weight_file, save_best_only=True, save_weights_only=True)
-model.fit([q1_train_word_index, q2_train_word_index],
+model.fit([q1_train_word_matrix, q2_train_word_matrix],
           label_train,
           batch_size=32,
           epochs=1000,
           verbose=2,
           callbacks=[early_stopping, model_checkpoint],
-          validation_data=([q1_dev_word_index, q2_dev_word_index], label_dev),
+          validation_data=([q1_dev_word_matrix, q2_dev_word_matrix], label_dev),
           shuffle=True)
 
 model.load_weights(model_weight_file)
 model.save(model_file)
-evaluate = model.evaluate([q1_test_word_index, q2_test_word_index], label_test, batch_size=32, verbose=2)
+evaluate = model.evaluate([q1_test_word_matrix, q2_test_word_matrix], label_test, batch_size=32, verbose=2)
 print('loss value=' + str(evaluate[0]))
 print('metrics value=' + str(evaluate[1]))
