@@ -1,30 +1,28 @@
 # coding=utf-8
 
 # @Author  : zhzhx2008
-# @Date    : 2019/10/22
+# @Date    : 2019/10/31
 
 # from:
-# http://www.iro.umontreal.ca/~lisa/pointeurs/ir0895-he-2.pdf
-#
-# reference：
-# https://www.cnblogs.com/guoyaohua/p/9229190.html
-#
+# 《Siamese Recurrent Architectures for Learning Sentence Similarity》
 
 
-from keras import Model
-from keras import backend as K
-from keras.callbacks import EarlyStopping, ModelCheckpoint
+from keras import Input, Model
+from keras.activations import softmax
 from keras.layers import *
 from keras.optimizers import Adam
+from keras import backend as K
 
 import warnings
 
 import jieba
 import numpy as np
+from keras import Model
+from keras.activations import softmax
+from keras.callbacks import EarlyStopping, ModelCheckpoint
+from keras.layers import *
 from keras.preprocessing import sequence
 from keras.preprocessing.text import Tokenizer
-from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.model_selection import train_test_split
 
 warnings.filterwarnings("ignore")
@@ -52,21 +50,6 @@ def get_datas(input_file):
             label = int(split[3].strip())
             datas.append((q1_word, q2_word, q1_char, q2_char, label))
     return datas
-
-
-def idx_processed(ary, voc_size, ngram):
-    ary3 = np.eye(voc_size + 1)[ary]
-    nums = ary3.shape[0]
-    maxlen = ary3.shape[1]
-    dim = ary3.shape[2]
-    res = np.zeros((nums, maxlen + 1 - ngram, dim * ngram))
-    for i in range(nums):
-        for j in range(0, maxlen - ngram + 1):
-            t = []
-            for k in range(0, ngram):
-                t.extend(list(ary3[i, j + k, :]))
-            res[i, j, :] = t
-    return res
 
 
 input_file = './data/atec_nlp_sim_train.csv'
@@ -100,7 +83,6 @@ label_test = [x[4] for x in datas_test]
 tokenizer = Tokenizer()
 tokenizer.fit_on_texts(q1_word_train + q2_word_train)
 
-# feature2: binary
 # feature5: word index for deep learning
 q1_train_word_index = tokenizer.texts_to_sequences(q1_word_train)
 q1_dev_word_index = tokenizer.texts_to_sequences(q1_word_dev)
@@ -117,57 +99,41 @@ q2_train_word_index = sequence.pad_sequences(q2_train_word_index, maxlen=max_wor
 q2_dev_word_index = sequence.pad_sequences(q2_dev_word_index, maxlen=max_word_length)
 q2_test_word_index = sequence.pad_sequences(q2_test_word_index, maxlen=max_word_length)
 
-voc_char_size = len(tokenizer.word_index)
-ngram = 3
+voc_size = len(tokenizer.word_index)
+embedding_dim = 300
+drop_out = 0.5
 
-q1_train_word_matrix = idx_processed(q1_train_word_index, voc_char_size, ngram)
-q1_dev_word_matrix = idx_processed(q1_dev_word_index, voc_char_size, ngram)
-q1_test_word_matrix = idx_processed(q1_test_word_index, voc_char_size, ngram)
-q2_train_word_matrix = idx_processed(q2_train_word_index, voc_char_size, ngram)
-q2_dev_word_matrix = idx_processed(q2_dev_word_index, voc_char_size, ngram)
-q2_test_word_matrix = idx_processed(q2_test_word_index, voc_char_size, ngram)
+q1_input = Input(name='q1', shape=(max_word_length,))
+q2_input = Input(name='q2', shape=(max_word_length,))
 
-# tri-gram
-q1_input = Input(name='q1', shape=(max_word_length - ngram + 1, (voc_char_size + 1) * ngram,))
-q2_input = Input(name='q2', shape=(max_word_length - ngram + 1, (voc_char_size + 1) * ngram,))
+embedding = Embedding(voc_size + 1, embedding_dim)
+spatialdropout = SpatialDropout1D(drop_out)
+lstm = LSTM(50)
 
-con = Conv1D(300, 3, padding='same', activation='tanh')
-pool = GlobalMaxPool1D()
-dense = Dense(128, activation='tanh')
+q1 = lstm(spatialdropout(embedding(q1_input)))
+q2 = lstm(spatialdropout(embedding(q2_input)))
 
-q1 = con(q1_input)
-q1 = pool(q1)
-q1 = dense(q1)
-
-q2 = con(q2_input)
-q2 = pool(q2)
-q2 = dense(q2)
-
-molecular = Lambda(lambda x: K.abs(K.sum(x[0] * x[1], axis=-1, keepdims=True)))([q1, q2])
-denominator = Lambda(lambda x: K.sqrt(K.sum(K.square(x[0]), axis=-1, keepdims=True)) * K.sqrt(
-    K.sum(K.square(x[1]), axis=-1, keepdims=True)))(
-    [q1, q2])
-out = Lambda(lambda x: x[0] / x[1])([molecular, denominator])
+out = Lambda(lambda x: K.exp(-K.sum(K.abs(x[0] - x[1]), axis=-1, keepdims=True)))([q1, q2])
 
 model = Model(inputs=[q1_input, q2_input], outputs=out)
 model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 print(model.summary())
 
-model_weight_file = './model_cnn_dssm.h5'
-model_file = './model_cnn_dssm.model'
+model_weight_file = './model_siamese_malstm.h5'
+model_file = './model_siamese_malstm.model'
 early_stopping = EarlyStopping(monitor='val_loss', patience=5)
 model_checkpoint = ModelCheckpoint(model_weight_file, save_best_only=True, save_weights_only=True)
-model.fit([q1_train_word_matrix, q2_train_word_matrix],
+model.fit([q1_train_word_index, q2_train_word_index],
           label_train,
           batch_size=32,
-          epochs=1000,
+          epochs=1,
           verbose=2,
           callbacks=[early_stopping, model_checkpoint],
-          validation_data=([q1_dev_word_matrix, q2_dev_word_matrix], label_dev),
+          validation_data=([q1_dev_word_index, q2_dev_word_index], label_dev),
           shuffle=True)
 
 model.load_weights(model_weight_file)
 model.save(model_file)
-evaluate = model.evaluate([q1_test_word_matrix, q2_test_word_matrix], label_test, batch_size=32, verbose=2)
+evaluate = model.evaluate([q1_test_word_index, q2_test_word_index], label_test, batch_size=32, verbose=2)
 print('loss value=' + str(evaluate[0]))
 print('metrics value=' + str(evaluate[1]))

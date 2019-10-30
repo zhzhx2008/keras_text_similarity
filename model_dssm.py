@@ -15,10 +15,6 @@ from keras import backend as K
 from keras.callbacks import EarlyStopping, ModelCheckpoint
 from keras.layers import *
 
-
-
-
-
 import warnings
 
 import jieba
@@ -109,8 +105,6 @@ q2_train_binary[q2_train_binary > 0] = 1.0
 q2_dev_binary[q2_dev_binary > 0] = 1.0
 q2_test_binary[q2_test_binary > 0] = 1.0
 
-
-
 voc_char_size = q1_train_binary.shape[1]
 
 q1_input = Input(name='q1', shape=(voc_char_size,))
@@ -129,14 +123,14 @@ q2 = dense2(q2)
 q2 = dense3(q2)
 
 molecular = Lambda(lambda x: K.abs(K.sum(x[0] * x[1], axis=-1, keepdims=True)))([q1, q2])
-denominator = Lambda(lambda x: K.sqrt(K.sum(K.square(x[0]), axis=-1, keepdims=True)) * K.sqrt(K.sum(K.square(x[1]), axis=-1, keepdims=True)))(
+denominator = Lambda(lambda x: K.sqrt(K.sum(K.square(x[0]), axis=-1, keepdims=True)) * K.sqrt(
+    K.sum(K.square(x[1]), axis=-1, keepdims=True)))(
     [q1, q2])
 out = Lambda(lambda x: x[0] / x[1])([molecular, denominator])
 
 model = Model(inputs=[q1_input, q2_input], outputs=out)
 model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 print(model.summary())
-
 
 model_weight_file = './model_dssm.h5'
 model_file = './model_dssm.model'

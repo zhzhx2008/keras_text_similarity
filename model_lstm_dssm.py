@@ -40,13 +40,6 @@
 # print(model.summary())
 
 
-
-
-
-
-
-
-
 # coding=utf-8
 
 # @Author  : zhzhx2008
@@ -65,9 +58,6 @@ from keras import backend as K
 from keras.callbacks import EarlyStopping, ModelCheckpoint
 from keras.layers import *
 from keras.optimizers import Adam
-
-
-
 
 import warnings
 
@@ -116,7 +106,7 @@ def idx_processed(ary, voc_size, ngram):
         for j in range(0, maxlen - ngram + 1):
             t = []
             for k in range(0, ngram):
-                t.extend(list(ary3[i,j+k,:]))
+                t.extend(list(ary3[i, j + k, :]))
             res[i, j, :] = t
     return res
 
@@ -180,8 +170,8 @@ q2_dev_word_matrix = idx_processed(q2_dev_word_index, voc_char_size, ngram)
 q2_test_word_matrix = idx_processed(q2_test_word_index, voc_char_size, ngram)
 
 # tri-gram
-q1_input = Input(name='q1', shape=(max_word_length - ngram + 1, (voc_char_size+1)*ngram, ))
-q2_input = Input(name='q2', shape=(max_word_length - ngram + 1, (voc_char_size+1)*ngram, ))
+q1_input = Input(name='q1', shape=(max_word_length - ngram + 1, (voc_char_size + 1) * ngram,))
+q2_input = Input(name='q2', shape=(max_word_length - ngram + 1, (voc_char_size + 1) * ngram,))
 
 lstm = LSTM(300, activation='tanh')
 dense = Dense(128, activation='tanh')
@@ -193,14 +183,14 @@ q2 = lstm(q2_input)
 q2 = dense(q2)
 
 molecular = Lambda(lambda x: K.abs(K.sum(x[0] * x[1], axis=-1, keepdims=True)))([q1, q2])
-denominator = Lambda(lambda x: K.sqrt(K.sum(K.square(x[0]), axis=-1, keepdims=True)) * K.sqrt(K.sum(K.square(x[1]), axis=-1, keepdims=True)))(
+denominator = Lambda(lambda x: K.sqrt(K.sum(K.square(x[0]), axis=-1, keepdims=True)) * K.sqrt(
+    K.sum(K.square(x[1]), axis=-1, keepdims=True)))(
     [q1, q2])
 out = Lambda(lambda x: x[0] / x[1])([molecular, denominator])
 
 model = Model(inputs=[q1_input, q2_input], outputs=out)
 model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 print(model.summary())
-
 
 model_weight_file = './model_lstm_dssm.h5'
 model_file = './model_lstm_dssm.model'

@@ -6,7 +6,6 @@ target/
 *.iml
 logs
 */src/test/java/META-INF/
-*.iml
 *.swp
 *.swo
 *.log
@@ -15,5 +14,6 @@ logs
 out/
 .DS_Store
 *.class
-*.log
 *.gz
+*.h5
+*.model
