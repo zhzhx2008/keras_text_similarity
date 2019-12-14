@@ -1,27 +1,17 @@
 # coding=utf-8
 
 # @Author  : zhzhx2008
-# @Date    : 2019/10/31
+# @Date    : 2019/12/15
 
 # from:
-# https://arxiv.org/abs/1508.01585，《Applying Deep Learning to Answer Selection: A Study and An Open Task》
-
-
-
-from keras import Input, Model
-from keras.activations import softmax
-from keras.layers import *
-from keras.optimizers import Adam
-from keras import backend as K
-
+# https://arxiv.org/abs/1602.06359，《Text Matching as Image Recognition》
+#
 import warnings
-
-import jieba
 import numpy as np
-from keras import Model
-from keras.activations import softmax
+import jieba
+from keras import Input, Model
 from keras.callbacks import EarlyStopping, ModelCheckpoint
-from keras.layers import *
+from keras.layers import Embedding, Reshape, Conv2D, Activation, MaxPooling2D, Flatten, Dropout, Dense, Dot
 from keras.preprocessing import sequence
 from keras.preprocessing.text import Tokenizer
 from sklearn.model_selection import train_test_split
@@ -100,42 +90,45 @@ q2_train_word_index = sequence.pad_sequences(q2_train_word_index, maxlen=max_wor
 q2_dev_word_index = sequence.pad_sequences(q2_dev_word_index, maxlen=max_word_length)
 q2_test_word_index = sequence.pad_sequences(q2_test_word_index, maxlen=max_word_length)
 
+maxlen = max_word_length
 voc_size = len(tokenizer.word_index)
 embedding_dim = 300
-drop_out = 0.5
+drop_out = 0.2
 dense_dim = 200
 
-q1_input = Input(name='q1', shape=(max_word_length,))
-q2_input = Input(name='q2', shape=(max_word_length,))
+# maxlen = 72
+# voc_size = 5000
+# embedding_dim = 128
 
+
+q1 = Input(name='q1', shape=(maxlen,))
+q2 = Input(name='q2', shape=(maxlen,))
+
+# Embedding
 embedding = Embedding(voc_size + 1, embedding_dim)
-spatialdropout = SpatialDropout1D(drop_out)
-dense = Dense(dense_dim, activation='tanh')
+q1_embed = embedding(q1)
+q2_embed = embedding(q2)
 
-conv = Conv1D(4000, 3, padding='same')
-dense2 = Dense(100, activation='tanh')
+out = Dot(axes=-1)([q1_embed, q2_embed])
+out = Reshape((maxlen, maxlen, -1))(out)
 
-q1 = dense(spatialdropout(embedding(q1_input)))
-q2 = dense(spatialdropout(embedding(q2_input)))
-q1 = conv(q1)
-q2 = conv(q2)
-q1 = GlobalMaxPool1D()(q1)
-q2 = GlobalMaxPool1D()(q2)
-q1 = dense2(q1)
-q2 = dense2(q2)
+out = Conv2D(filters=100, kernel_size=(3, 3), padding='same',activation='relu')(out)
+out = MaxPooling2D(pool_size=(2, 2))(out)
+out = Conv2D(filters=100, kernel_size=(3, 3), padding='same',activation='relu')(out)
+out = MaxPooling2D(pool_size=(2, 2))(out)
 
-molecular = Lambda(lambda x: K.abs(K.sum(x[0] * x[1], axis=-1, keepdims=True)))([q1, q2])
-denominator = Lambda(lambda x: K.sqrt(K.sum(K.square(x[0]), axis=-1, keepdims=True)) * K.sqrt(
-    K.sum(K.square(x[1]), axis=-1, keepdims=True)))(
-    [q1, q2])
-out = Lambda(lambda x: x[0] / x[1])([molecular, denominator])
+out = Flatten()(out)
+out = Dense(128, activation='relu')(out)
+out = Dense(32, activation='relu')(out)
+out = Dense(1, activation='sigmoid')(out)
 
-model = Model(inputs=[q1_input, q2_input], outputs=out)
+model = Model(inputs=[q1, q2], outputs=out)
 model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 print(model.summary())
 
-model_weight_file = './model_siamese_cnn.h5'
-model_file = './model_siamese_cnn.model'
+
+model_weight_file = './model_match_pyramid_cnn.h5'
+model_file = './model_match_pyramid_cnn.model'
 early_stopping = EarlyStopping(monitor='val_loss', patience=5)
 model_checkpoint = ModelCheckpoint(model_weight_file, save_best_only=True, save_weights_only=True)
 model.fit([q1_train_word_index, q2_train_word_index],

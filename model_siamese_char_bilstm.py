@@ -4,6 +4,7 @@
 # @Date    : 2019/10/31
 
 # from:
+# https://www.researchgate.net/publication/307558687_Siamese_Recurrent_Architectures_for_Learning_Sentence_Similarity
 # 《Siamese Recurrent Architectures for Learning Sentence Similarity》
 
 
